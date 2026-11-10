@@ -86,7 +86,16 @@ function findOptions() {
   for (let depth = 0; depth < 2; depth++) for (const u of [...queue]) {
     if (seen.size >= MAX) break;
     await goto(u);
-    const hrefs = await page.$$eval('a[href]', as => as.map(a => a.href.split('#')[0].replace(/\/$/, '')));
+    // Normal links, plus buttons that navigate with a script (onclick="location.href='...'") or data-href.
+    const hrefs = await page.evaluate(() => {
+      const out = [...document.querySelectorAll('a[href]')].map(a => a.href);
+      for (const el of document.querySelectorAll('[onclick],[data-href],[data-url],[data-link]')) {
+        const src = (el.getAttribute('onclick') || '') + ' ' + (el.dataset.href || el.dataset.url || el.dataset.link || '');
+        for (const m of src.matchAll(/(?:location(?:\.href)?\s*=\s*|^|\s)['"]?((?:https?:\/\/|\/)[^'"\s)]+)/g)) { try { out.push(new URL(m[1].replace(/&amp;/g, '&'), location.href).href); } catch {} }
+      }
+      for (const m of document.documentElement.innerHTML.matchAll(/location\.href\s*=\s*["']([^"']+)["']/g)) { try { out.push(new URL(m[1], location.href).href); } catch {} }
+      return out.map(h => h.split('#')[0].replace(/\/$/, ''));
+    });
     for (const h of hrefs) {
       try { const x = new URL(h); if (x.hostname.replace(/^www\./, '') !== host || SKIP.test(x.pathname)) continue; } catch { continue; }
       if (!seen.has(h) && seen.size < MAX) { seen.add(h); queue.push(h); }
